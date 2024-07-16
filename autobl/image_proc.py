@@ -7,6 +7,7 @@ import numpy as np
 import scipy.interpolate
 from scipy.spatial.distance import cdist
 from sklearn.neighbors import NearestNeighbors
+import torch
 
 from autobl.bounding_box import BoundingBox
 
@@ -129,7 +130,8 @@ class Reconstructor:
     """
 
     def __init__(
-        self, method: Literal["idw", "linear"] = "idw", options: Optional[dict] = None
+        self, method: Literal["idw", "linear"] = "idw", options: Optional[dict] = None, 
+        backend: Literal["numpy", "torch"] = "numpy"
     ):
         """
         The constructor.
@@ -141,10 +143,12 @@ class Reconstructor:
             When method is 'idw':
                 n_neighbors: number of neighbors whose values are used to
                     calculate the interpolation for each point.
+        :param backend: str. 'numpy' or 'torch'.
         :return: np.ndarray.
         """
         self.method = method
         self.options = options if options is not None else {}
+        self.backend = backend
 
     def reconstruct(
         self,
@@ -211,7 +215,22 @@ class Reconstructor:
         :param xi: np.ndarray. points to measure at
         :param n_neighbors: number of nearest neighbors to use in the
             reconstruction
+        :param power: float. power of the inverse distance weighting
+        :param backend: str. backend to use for inverse distance weighting. 
+            Can be "numpy" or "torch".
         """
+        if self.backend == "torch":
+            if isinstance(points, np.ndarray):
+                points = torch.from_numpy(points)
+            if isinstance(values, np.ndarray):
+                values = torch.from_numpy(values)
+            if meshgrids is not None and isinstance(meshgrids[0], np.ndarray):
+                meshgrids = [torch.from_numpy(x) for x in meshgrids]
+            if xi is not None and isinstance(xi, np.ndarray):
+                xi = torch.from_numpy(xi)
+            recon = self.reconstruct_idw_torch(points, values, meshgrids, xi, n_neighbors, power)
+            return recon
+        
         if meshgrids is not None:
             xi = np.stack(meshgrids, axis=-1).reshape(-1, len(meshgrids))
         if n_neighbors is None:
@@ -236,6 +255,37 @@ class Reconstructor:
         nn_values = np.take(values, nn_inds)
 
         recon = np.sum(nn_values * nn_weights, axis=1)
+        if meshgrids is not None:
+            recon = recon.reshape(meshgrids[0].shape)
+        return recon
+    
+    def reconstruct_idw_torch(
+        self,
+        points: torch.Tensor,
+        values: torch.Tensor,
+        meshgrids: Tuple[torch.Tensor, torch.Tensor] = None,
+        xi: torch.Tensor = None,
+        n_neighbors: int = None,
+        power: float = 2.0,
+    ):
+        points = points.type(values.dtype)
+        if meshgrids is not None:
+            meshgrids = [x.type(values.dtype) for x in meshgrids]
+            xi = torch.stack(meshgrids, dim=-1).reshape(-1, len(meshgrids))
+        if n_neighbors is None:
+            n_neighbors = self.options.get("n_neighbors", 4)
+        if n_neighbors == -1:
+            raise NotImplementedError("Not implemented for torch.")
+        knn_engine = NearestNeighbors(n_neighbors=n_neighbors)
+        knn_engine.fit(points.detach().cpu().numpy())
+
+        # Find nearest measured points for each queried point.
+        _, nn_inds = knn_engine.kneighbors(xi, return_distance=True)
+        nn_dists = torch.sqrt(torch.sum((xi.unsqueeze(1) - points[nn_inds]) ** 2, dim=-1))
+        nn_weights = self._compute_neighbor_weights(nn_dists, power=power, backend="torch")
+        nn_values = values[torch.tensor(nn_inds)]
+
+        recon = torch.sum(nn_values * nn_weights, dim=1)
         if meshgrids is not None:
             recon = recon.reshape(meshgrids[0].shape)
         return recon
@@ -325,10 +375,11 @@ class Reconstructor:
 
     @staticmethod
     def _compute_neighbor_weights(
-        neighbor_distances: np.ndarray,
+        neighbor_distances: np.ndarray | torch.Tensor,
         power: float = 2.0,
         epsilon: float = 1e-7,
-    ) -> np.ndarray:
+        backend: Literal["numpy", "torch"] = "numpy",
+    ) -> np.ndarray | torch.Tensor:
         """
         Calculating the weights for how each neighboring data point contributes
         to the reconstruction for the current location.
@@ -337,12 +388,13 @@ class Reconstructor:
         distance from teh current point. Next, the weights are normalized so
         that the total weight sums up to 1 for each reconstruction point.
         """
+        be = np if backend == "numpy" else torch
         # dists = np.copy(neighbor_distances)
         # mask = dists == 0.0
         # dists[np.sum(mask, axis=1) > 0, :] = np.inf
         # dists[mask] = 1.0
-        unnormalized_weights = 1.0 / (np.power(neighbor_distances + epsilon, power))
-        sum_over_row = np.sum(unnormalized_weights, axis=1, keepdims=True)
+        unnormalized_weights = 1.0 / ((neighbor_distances + epsilon) ** power)
+        sum_over_row = be.sum(unnormalized_weights, axis=1, keepdims=True)
         weights = unnormalized_weights / sum_over_row
         return weights
 
@@ -441,6 +493,7 @@ class DenseReconstructor(Reconstructor):
         :param values: np.ndarray. A 1-D array of measured values.
         :param meshgrids: dense meshgrid to do the reconstruction
         :param n_neighbors: number of nearest neighbors for IDW reconstruction
+        :param backend: str. 'numpy' or 'torch'.
         :return:
         """
         if self.method == "linear":
