@@ -41,8 +41,8 @@ ref_spectra_1 = YBCORawDataset('data/raw/YBCO/YBCO_eparc.0001')[0]
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(to_numpy(energies), data, label='data')
 plt.show()
-xanes_normalizer = XANESNormalizer()
-xanes_normalizer.fit(energies, data, fit_ranges=((8788, 8914), (9401, 10000)))
+xanes_normalizer = XANESNormalizer(fit_ranges=((8788, 8914), (9401, 10000)), edge_loc=8990)
+xanes_normalizer.fit(energies, data)
 
 # Only keep 8920 - 9080 eV
 data = data[14:232]

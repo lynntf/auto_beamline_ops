@@ -99,10 +99,10 @@ class DynamicExperimentResultAnalyzer:
             x, y = to_numpy(tester.test_energies.squeeze()), dset
             fig, ax = plt.subplots(2, 1, figsize=(4, 4))
             ax[0].plot(x, y[0])
-            ax[0].set_ylabel('Normalized absorption')
+            ax[0].set_ylabel('Normalized\nx-ray absorption')
             ax[0].grid()
             ax[1].plot(x, y[-1])
-            ax[1].set_ylabel('Normalized absorption')
+            ax[1].set_ylabel('Normalized\nx-ray absorption')
             ax[1].set_xlabel('Energy (eV)')
             ax[1].grid()
             plt.tight_layout()
@@ -171,20 +171,28 @@ class DynamicExperimentResultAnalyzer:
         plt.tight_layout()
         fig.savefig(os.path.join(self.output_dir, output_filename))
 
-    def plot_spectrum(self, result_folders, labels, spectrum_index, output_filename):
+    def plot_spectrum(self, result_folders, labels, spectrum_index, normalizer=None, output_filename="spectrum.pdf"):
+        if normalizer is not None:
+            metadata = self.get_metadata(result_folders[0])
+            tester = self.tester_class(**metadata)
+            tester.load_data(normalizer=normalizer)
+            normalizer.fit(tester.test_energies_raw, tester.test_data_all_spectra_raw[spectrum_index])
         fig, ax = plt.subplots(1, 1, figsize=(6, 3))
         for i, (result_folder, label) in enumerate(zip(result_folders, labels)):
             table = pd.read_csv(os.path.join(result_folder, 'estimated_data_ind_{}.csv'.format(spectrum_index)))
             energies = table['energy']
             estimated_data = table['estimated_data']
             true_data = table['true_data']
+            if normalizer is not None:
+                estimated_data = normalizer.apply(energies, estimated_data)
+                true_data = normalizer.apply(energies, true_data)
             if i == 0:
                 ax.plot(energies, true_data, color='gray', linestyle='--', label='Ground truth')
             ax.plot(energies, estimated_data, linestyle=self.style_list[i], label=label)
         ax.grid()
         ax.legend()
         ax.set_xlabel('Energy (eV)')
-        ax.set_ylabel('Normalized absorption')
+        ax.set_ylabel('Normalized\nx-ray absorption')
         plt.tight_layout()
         fig.savefig(os.path.join(self.output_dir, output_filename))
 
@@ -211,32 +219,32 @@ if __name__ == '__main__':
     analyzer.compare_rms_across_time(folders, labels, output_filename='LTO_50C_comparison_rms_across_time.pdf')
     analyzer.compare_calculated_percentages(folders, labels, normalizer=normalizer, 
                                             read_precalculated_percentage_data=False, output_filename='LTO_50C_comparison_calculated_percentages.pdf')
-    analyzer.plot_spectrum(folders, labels, 80, output_filename='LTO_50C_estimated_spectra_80.pdf')
-    analyzer.plot_spectrum(folders, labels, 90, output_filename='LTO_50C_estimated_spectra_90.pdf')
+    analyzer.plot_spectrum(folders, labels, 80, output_filename='LTO_50C_estimated_spectra_80.pdf', normalizer=normalizer)
+    analyzer.plot_spectrum(folders, labels, 90, output_filename='LTO_50C_estimated_spectra_90.pdf', normalizer=normalizer)
 
     # -----------------------------------
 
-    folders = [
-        'outputs/grid_transfer_Pt/grid_redoForEach/Pt',
-        'outputs/grid_transfer_Pt/grid_initOfSelf/Pt',
-        'outputs/grid_transfer_Pt/grid_selectedRef/Pt',
-    ]
-    labels = [
-        'Run for each',
-        'Initial spectrum',
-        'Selected from ref. experiments'
-    ]
+    # folders = [
+    #     'outputs/grid_transfer_Pt/grid_redoForEach/Pt',
+    #     'outputs/grid_transfer_Pt/grid_initOfSelf/Pt',
+    #     'outputs/grid_transfer_Pt/grid_selectedRef/Pt',
+    # ]
+    # labels = [
+    #     'Run for each',
+    #     'Initial spectrum',
+    #     'Selected from ref. experiments'
+    # ]
 
-    normalizer = xanestools.XANESNormalizer(fit_ranges=((11400, 11500), (11650, 11850)), edge_loc=11566.0)
+    # normalizer = xanestools.XANESNormalizer(fit_ranges=((11400, 11500), (11650, 11850)), edge_loc=11566.0)
     
-    analyzer = DynamicExperimentResultAnalyzer(tester_class=PtGridTransferTester)
-    label_val_list = [int(re.findall('\d+', f)[-1]) for f in glob.glob('data/raw/Pt-XANES/Pt_xmu/*.xmu')]
-    label_val_list.sort()
-    label_list = [str(x) + '$^\circ\!$C' for x in label_val_list]
-    analyzer.plot_data(folders[0], transpose=True, plot_func='plot', line_plot_labels=label_list, normalizer=normalizer, output_filename='Pt_grid_transfer_test_data.pdf')
-    analyzer.plot_data(folders[0], transpose=True, plot_func='plot', line_plot_labels=label_list, normalizer=None, output_filename='Pt_grid_transfer_test_data_raw.pdf')
-    analyzer.compare_rms_across_time(folders, labels, output_filename='Pt_grid_transfer_comparison_rms_across_time.pdf')
-    analyzer.compare_calculated_percentages(folders, labels, x_data=label_val_list[1:-1], x_label='Temperature ($\!^\circ\!$C)', 
-                                            read_precalculated_percentage_data=False, normalizer=normalizer, output_filename='Pt_grid_transfer_comparison_calculated_percentages.pdf')
-    # analyzer.plot_spectrum(folders, labels, 0, output_filename='Pt_grid_transfer_estimated_spectra_0.pdf')
-    # analyzer.plot_spectrum(folders, labels, 21, output_filename='Pt_grid_transfer_estimated_spectra_21.pdf')
+    # analyzer = DynamicExperimentResultAnalyzer(tester_class=PtGridTransferTester)
+    # label_val_list = [int(re.findall('\d+', f)[-1]) for f in glob.glob('data/raw/Pt-XANES/Pt_xmu/*.xmu')]
+    # label_val_list.sort()
+    # label_list = [str(x) + '$^\circ\!$C' for x in label_val_list]
+    # analyzer.plot_data(folders[0], transpose=True, plot_func='plot', line_plot_labels=label_list, normalizer=normalizer, output_filename='Pt_grid_transfer_test_data.pdf')
+    # analyzer.plot_data(folders[0], transpose=True, plot_func='plot', line_plot_labels=label_list, normalizer=None, output_filename='Pt_grid_transfer_test_data_raw.pdf')
+    # analyzer.compare_rms_across_time(folders, labels, output_filename='Pt_grid_transfer_comparison_rms_across_time.pdf')
+    # analyzer.compare_calculated_percentages(folders, labels, x_data=label_val_list[1:-1], x_label='Temperature ($\!^\circ\!$C)', 
+    #                                         read_precalculated_percentage_data=False, normalizer=normalizer, output_filename='Pt_grid_transfer_comparison_calculated_percentages.pdf')
+    # # analyzer.plot_spectrum(folders, labels, 0, output_filename='Pt_grid_transfer_estimated_spectra_0.pdf')
+    # # analyzer.plot_spectrum(folders, labels, 21, output_filename='Pt_grid_transfer_estimated_spectra_21.pdf')

@@ -25,7 +25,7 @@ class ResultAnalyzer:
         matplotlib.rcParams['pdf.fonttype'] = 42
 
     def compare_convergence(self, file_list, labels, ref_line_y=0.005, add_legend=True, output_filename='comparison_convergence.pdf', figsize=None,
-                            auc_range=None, rms_normalization_factor=1.0):
+                            auc_range=None, rms_normalization_factor=1.0, normalizer=None):
         rms_all_files = []
         n_pts_all_files = []
         for f in file_list:
@@ -33,7 +33,11 @@ class ResultAnalyzer:
             n_pts = []
             data = pickle.load(open(f, 'rb'))
             data_true = data['data_y']
+            if normalizer is not None:
+                data_true = normalizer.apply(data['data_x'], data_true)
             for i, data_estimated in enumerate(data['mu_list']):
+                if normalizer is not None:
+                    data_estimated = normalizer.apply(data['data_x'], data_estimated)
                 r = rms(data_estimated, data_true)
                 r = r / rms_normalization_factor
                 rms_list.append(r)
@@ -223,15 +227,18 @@ if __name__ == '__main__':
     #           'Posterior uncertainty only',
     #           'Uniform sampling'
     #           ]
+    
+    # normalizer = xanestools.XANESNormalizer()
+    # normalizer.load_state("outputs/YBCO_raw_randInit/normalizer_state.npy")
+    # print(normalizer.__dict__)
+    
     # analyzer = ResultAnalyzer(output_dir='factory')
     # analyzer.compare_convergence(flist, labels, output_filename='YBCO_comparison_convergence.pdf', auc_range=(0, 30), 
-    #                              ref_line_y=0.004, rms_normalization_factor=1.0)
+    #                              ref_line_y=0.005, rms_normalization_factor=1.0, normalizer=normalizer)
     # analyzer.plot_intermediate(flist[0], interval=6, output_filename='YBCO_intermediate.pdf')
     # analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=30,
     #                            zoom_in_range_x=(9007, 9017), zoom_in_range_y=(1.05, 1.2), add_legend=False,
     #                            output_filename='YBCO_intermediate_atNPts_30.pdf')
-    # normalizer = xanestools.XANESNormalizer()
-    # normalizer.load_state("outputs/YBCO_raw_randInit/normalizer_state.npy")
     # analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=50, add_legend=False,
     #                            normalizer=normalizer,
     #                            output_filename='YBCO_intermediate_atNPts_50_norm_detilt.pdf')
@@ -271,10 +278,14 @@ if __name__ == '__main__':
               'Posterior uncertainty only',
               'Uniform sampling'
               ]
+    
+    normalizer = xanestools.XANESNormalizer()
+    normalizer.load_state("outputs/Pt_raw_randInit/normalizer_state.npy")
+    
     analyzer = ResultAnalyzer(output_dir='factory')
     # analyzer.plot_intermediate(flist[0], interval=1, make_animation=True, output_filename='Pt_intermediate_animation.mp4')
     # analyzer.plot_intermediate(flist[3], interval=1, make_animation=True, output_filename='Pt_intermediate_uniform_sampling_animation.mp4')
-    analyzer.compare_convergence(flist, labels, ref_line_y=0.001, add_legend=False, output_filename='Pt_comparison_convergence.pdf', figsize=(8, 4), auc_range=(0, 35))
+    analyzer.compare_convergence(flist, labels, ref_line_y=0.005, add_legend=False, output_filename='Pt_comparison_convergence.pdf', figsize=(8, 4), auc_range=(0, 35), normalizer=normalizer)
     analyzer.plot_intermediate(flist[0], interval=5, n_cols=4, output_filename='Pt_intermediate.pdf')
     analyzer.compare_intermediate(flist, labels, interval=5, n_cols=3, add_legend=False, output_filename='Pt_comparison_intermediate.pdf')
     # analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=32,

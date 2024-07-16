@@ -1,0 +1,7 @@
+**/*.xml
+**/*.pyc
+.idea/
+workspace/spectroscopy/XANES/data
+workspace/spectroscopy/XANES/outputs
+workspace/spectroscopy/XANES/factory
+tests/outputs
