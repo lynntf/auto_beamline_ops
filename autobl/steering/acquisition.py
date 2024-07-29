@@ -14,6 +14,23 @@ from torch import Tensor
 from autobl.util import *
 
 
+class DummyAcquisition:
+    
+    def __init__(self, *args, **kwargs) -> None:
+        pass
+    
+    def __getattr__(self, name):
+        def dummy_func(*args, **kwargs):
+            return None
+        return dummy_func
+    
+    def forward(self, x: Tensor, *args, **kwargs):
+        return torch.tensor(0.0, device=x.device)
+    
+    def __call__(self, *args, **kwargs):
+        return self.forward(*args, **kwargs)
+
+
 class PosteriorStandardDeviationDerivedAcquisition(PosteriorStandardDeviation):
     def __init__(
             self, model: Model,
@@ -341,8 +358,8 @@ class ComprehensiveAugmentedAcquisitionFunction(PosteriorStandardDeviationDerive
             gradient_dims: Optional[list[int, ...]] = None,
             gradient_order: int = 1,
             differentiation_method: str = 'analytical',
-            reference_spectra_x: Tensor = None,
-            reference_spectra_y: Tensor = None,
+            reference_spectra_x: Optional[Tensor] = None,
+            reference_spectra_y: Optional[Tensor] = None,
             phi_g: float = 0.1,
             phi_g2: float = 0.001,
             phi_r: float = 100,
@@ -382,23 +399,28 @@ class ComprehensiveAugmentedAcquisitionFunction(PosteriorStandardDeviationDerive
             estimate_posterior_mean_by_interpolation=estimate_posterior_mean_by_interpolation,
             guide_obj=guide_obj,
         )
-        self.acqf_r = FittingResiduePosteriorStandardDeviation(
-            model,
-            input_transform=input_transform,
-            posterior_transform=posterior_transform,
-            maximize=maximize,
-            beta=beta,
-            gamma=gamma,
-            reference_spectra_x=reference_spectra_x,
-            reference_spectra_y=reference_spectra_y,
-            phi=phi_r,
-            add_posterior_stddev=False,
-            estimate_posterior_mean_by_interpolation=estimate_posterior_mean_by_interpolation,
-            guide_obj=guide_obj,
-            debug=debug
-        )
+        if reference_spectra_x is not None and reference_spectra_y is not None:
+            self.acqf_r = FittingResiduePosteriorStandardDeviation(
+                model,
+                input_transform=input_transform,
+                posterior_transform=posterior_transform,
+                maximize=maximize,
+                beta=beta,
+                gamma=gamma,
+                reference_spectra_x=reference_spectra_x,
+                reference_spectra_y=reference_spectra_y,
+                phi=phi_r,
+                add_posterior_stddev=False,
+                estimate_posterior_mean_by_interpolation=estimate_posterior_mean_by_interpolation,
+                guide_obj=guide_obj,
+                debug=debug
+            )
+            self.phi_r = self.acqf_r.phi
+        else:
+            logging.warning('No reference spectra provided. Using dummy acquisition function instead.')
+            self.acqf_r = DummyAcquisition()
+            self.phi_r = 0
         self.gradient_order = gradient_order
-        self.phi_r = self.acqf_r.phi
         self.phi_g = self.acqf_g.phi
         self.phi_g2 = self.acqf_g.phi2
         self.reference_spectra_x = reference_spectra_x
