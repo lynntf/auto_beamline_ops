@@ -273,6 +273,23 @@ class Reconstructor:
         power: float = 2.0,
         nn_inds: torch.Tensor = None,
     ):
+        """
+        Inverse distance weighted interpolation with nearest neighbors (pytorch
+        implementation)
+        
+        :param points: torch.Tensor. points to interpolate between, shape (num
+            interp points, dimension)
+        :param values: torch.Tensor. values to interpolate between, shape (num
+            interp points,)
+        :param meshgrids: Tuple[torch.Tensor, torch.Tensor]. grid to get
+            interpolated values for
+        :param xi: torch.Tensor. points to measure at
+        :param n_neighbors: int. number of nearest neighbors to use in the
+            reconstruction
+        :param power: float. power for inverse distance weighting
+        :param nn_inds: torch.Tensor. indices of nearest neighbors; if provided,
+            neighbors are not computed here
+        """
         points = points.type(values.dtype)
         if meshgrids is not None:
             meshgrids = [x.type(values.dtype) for x in meshgrids]
@@ -325,7 +342,7 @@ class Reconstructor:
         :param meshgrids: Tuple[np.ndarray, np.ndarray]. grid to get
             interpolated values for
         :param xi: np.ndarray. points to measure at
-        :param n_neighbors: number of nearest neighbors to use in the
+        :param n_neighbors: int. number of nearest neighbors to use in the
             reconstruction
         """
         if meshgrids is not None:
@@ -400,7 +417,8 @@ class Reconstructor:
         epsilon: float = 1e-7,
     ):
         """
-        Inverse distance weighted interpolation gradient with nearest neighbors (pytorch implementation)
+        Inverse distance weighted interpolation gradient with nearest neighbors
+        (pytorch implementation)
 
         :param points: torch.Tensor. points to interpolate between, shape (num
             interp points, dimension)
@@ -409,8 +427,13 @@ class Reconstructor:
         :param meshgrids: Tuple[torch.Tensor, torch.Tensor]. grid to get
             interpolated values for
         :param xi: torch.Tensor. points to measure at
-        :param n_neighbors: number of nearest neighbors to use in the
+        :param n_neighbors: int. number of nearest neighbors to use in the
             reconstruction
+        :param nn_inds: torch.Tensor. indices of nearest neighbors; if provided,
+            neighbors are not computed here
+        :param power: float. power for inverse distance weighting
+        :param epsilon: float. small number added to distances to avoid division
+            by zero
         """
         if meshgrids is not None:
             xi = torch.stack(meshgrids, axis=-1).reshape(-1, len(meshgrids))
