@@ -130,8 +130,10 @@ class Reconstructor:
     """
 
     def __init__(
-        self, method: Literal["idw", "linear"] = "idw", options: Optional[dict] = None, 
-        backend: Literal["numpy", "torch"] = "numpy"
+        self,
+        method: Literal["idw", "linear"] = "idw",
+        options: Optional[dict] = None,
+        backend: Literal["numpy", "torch"] = "numpy",
     ):
         """
         The constructor.
@@ -216,7 +218,7 @@ class Reconstructor:
         :param n_neighbors: number of nearest neighbors to use in the
             reconstruction
         :param power: float. power of the inverse distance weighting
-        :param backend: str. backend to use for inverse distance weighting. 
+        :param backend: str. backend to use for inverse distance weighting.
             Can be "numpy" or "torch".
         """
         if self.backend == "torch":
@@ -228,9 +230,11 @@ class Reconstructor:
                 meshgrids = [torch.from_numpy(x) for x in meshgrids]
             if xi is not None and isinstance(xi, np.ndarray):
                 xi = torch.from_numpy(xi)
-            recon = self.reconstruct_idw_torch(points, values, meshgrids, xi, n_neighbors, power)
+            recon = self.reconstruct_idw_torch(
+                points, values, meshgrids, xi, n_neighbors, power
+            )
             return recon
-        
+
         if meshgrids is not None:
             xi = np.stack(meshgrids, axis=-1).reshape(-1, len(meshgrids))
         if n_neighbors is None:
@@ -258,7 +262,7 @@ class Reconstructor:
         if meshgrids is not None:
             recon = recon.reshape(meshgrids[0].shape)
         return recon
-    
+
     def reconstruct_idw_torch(
         self,
         points: torch.Tensor,
@@ -267,6 +271,7 @@ class Reconstructor:
         xi: torch.Tensor = None,
         n_neighbors: int = None,
         power: float = 2.0,
+        nn_inds: torch.Tensor = None,
     ):
         points = points.type(values.dtype)
         if meshgrids is not None:
@@ -276,13 +281,23 @@ class Reconstructor:
             n_neighbors = self.options.get("n_neighbors", 4)
         if n_neighbors == -1:
             raise NotImplementedError("Not implemented for torch.")
-        knn_engine = NearestNeighbors(n_neighbors=n_neighbors)
-        knn_engine.fit(points.detach().cpu().numpy())
+        if nn_inds is None or xi.shape[0] != nn_inds.shape[0]:
+            knn_engine = NearestNeighbors(n_neighbors=n_neighbors)
+            knn_engine.fit(points.detach().cpu().numpy())
 
-        # Find nearest measured points for each queried point.
-        _, nn_inds = knn_engine.kneighbors(xi, return_distance=True)
-        nn_dists = torch.sqrt(torch.sum((xi.unsqueeze(1) - points[nn_inds]) ** 2, dim=-1))
-        nn_weights = self._compute_neighbor_weights(nn_dists, power=power, backend="torch")
+            # Find nearest measured points for each queried point.
+            if isinstance(xi, np.ndarray):
+                nn_inds = knn_engine.kneighbors(xi, return_distance=False)
+            elif isinstance(xi, torch.Tensor):
+                nn_inds = knn_engine.kneighbors(
+                    xi.detach().numpy(), return_distance=False
+                )
+        nn_dists = torch.sqrt(
+            torch.sum((xi.unsqueeze(1) - points[nn_inds]) ** 2, dim=-1)
+        )
+        nn_weights = self._compute_neighbor_weights(
+            nn_dists, power=power, backend="torch"
+        )
         nn_values = values[torch.tensor(nn_inds)]
 
         recon = torch.sum(nn_values * nn_weights, dim=1)
@@ -372,6 +387,70 @@ class Reconstructor:
         ).reshape(meshgrids[0].shape)
 
         return grad
+
+    def reconstruct_idw_grad_torch(
+        self,
+        points: torch.Tensor,
+        values: torch.Tensor,
+        meshgrids: Tuple[torch.Tensor, torch.Tensor] = None,
+        xi: torch.tensor = None,
+        n_neighbors: int = None,
+        nn_inds: torch.tensor = None,
+        power: float = 2.0,
+        epsilon: float = 1e-7,
+    ):
+        """
+        Inverse distance weighted interpolation gradient with nearest neighbors (pytorch implementation)
+
+        :param points: torch.Tensor. points to interpolate between, shape (num
+            interp points, dimension)
+        :param values: torch.Tensor. values to interpolate between, shape (num
+            interp points,)
+        :param meshgrids: Tuple[torch.Tensor, torch.Tensor]. grid to get
+            interpolated values for
+        :param xi: torch.Tensor. points to measure at
+        :param n_neighbors: number of nearest neighbors to use in the
+            reconstruction
+        """
+        if meshgrids is not None:
+            xi = torch.stack(meshgrids, axis=-1).reshape(-1, len(meshgrids))
+        if nn_inds is None:
+            if n_neighbors is None:
+                n_neighbors = self.options.get("n_neighbors", 4)
+            if n_neighbors == -1:
+                n_neighbors = len(points)
+            knn_engine = NearestNeighbors(n_neighbors=n_neighbors)
+            knn_engine.fit(points.detach().numpy())
+
+            # Find nearest measured points for each queried point.
+            nn_inds = knn_engine.kneighbors(xi.detach().numpy(), return_distance=False)
+
+        nn_dists = torch.sqrt(
+            # torch.sum((xi.unsqueeze(1) - points[nn_inds]) ** 2, dim=-1)
+            torch.sum((xi[:, None, :] - points[nn_inds]) ** 2, dim=-1)
+        )
+        values = values[torch.tensor(nn_inds)]
+
+        inv_distances = 1 / (nn_dists + epsilon)
+        sum_inv_distances = torch.sum(inv_distances**power, axis=1)
+
+        inv_cubed = inv_distances ** (power + 2)
+        sum_val_inv_distances = torch.sum(values * (inv_distances**power), axis=1)
+        val_inv_cubed = values * inv_distances ** (power + 2)
+        diff_x = xi[:, None, 0] - points[nn_inds, 0]
+        diff_y = xi[:, None, 1] - points[nn_inds, 1]
+
+        dx = (
+            -sum_inv_distances * torch.sum(val_inv_cubed * diff_x, axis=1)
+            + sum_val_inv_distances * torch.sum(inv_cubed * diff_x, axis=1)
+        ) / (sum_inv_distances**2)
+
+        dy = (
+            -sum_inv_distances * torch.sum(val_inv_cubed * diff_y, axis=1)
+            + sum_val_inv_distances * torch.sum(inv_cubed * diff_y, axis=1)
+        ) / (sum_inv_distances**2)
+
+        return torch.stack((dx, dy), dim=0)
 
     @staticmethod
     def _compute_neighbor_weights(
