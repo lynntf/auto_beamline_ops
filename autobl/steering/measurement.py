@@ -1,7 +1,7 @@
 """Measurement methods"""
 
 import copy
-from typing import Callable, List  # , Sequence
+from typing import Callable, List, Optional  # , Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -460,8 +460,8 @@ def convolve_probe_image(image: np.ndarray, probe: np.ndarray = None) -> np.ndar
 
 def get_interpolated_values_from_image(
     point_list: np.ndarray | List[List[float]],
-    image: np.ndarray = None,
-    probe_image: np.ndarray = None,
+    image: Optional[np.ndarray] = None,
+    probe_image: Optional[np.ndarray] = None,
     probe: np.ndarray = np.ones((1, 1)),
     normalize_probe: bool = True,
 ):

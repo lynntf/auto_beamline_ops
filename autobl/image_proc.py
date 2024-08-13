@@ -228,6 +228,7 @@ class Reconstructor:
                 values = torch.from_numpy(values)
             if meshgrids is not None and isinstance(meshgrids[0], np.ndarray):
                 meshgrids = [torch.from_numpy(x) for x in meshgrids]
+                xi = torch.stack(meshgrids, axis=-1).reshape(-1, len(meshgrids))
             if xi is not None and isinstance(xi, np.ndarray):
                 xi = torch.from_numpy(xi)
             recon = self.reconstruct_idw_torch(
@@ -267,9 +268,9 @@ class Reconstructor:
         self,
         points: torch.Tensor,
         values: torch.Tensor,
-        meshgrids: Tuple[torch.Tensor, torch.Tensor] = None,
-        xi: torch.Tensor = None,
-        n_neighbors: int = None,
+        meshgrids: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        xi: Optional[torch.Tensor] = None,
+        n_neighbors: Optional[int] = None,
         power: float = 2.0,
         nn_inds: torch.Tensor = None,
     ):
@@ -290,9 +291,9 @@ class Reconstructor:
         :param nn_inds: torch.Tensor. indices of nearest neighbors; if provided,
             neighbors are not computed here
         """
-        points = points.type(values.dtype)
-        if meshgrids is not None:
-            meshgrids = [x.type(values.dtype) for x in meshgrids]
+        # points = points.type(values.dtype)
+        if meshgrids is not None and xi is None:
+            # meshgrids = [x.type(values.dtype) for x in meshgrids]
             xi = torch.stack(meshgrids, dim=-1).reshape(-1, len(meshgrids))
         if n_neighbors is None:
             n_neighbors = self.options.get("n_neighbors", 4)
@@ -310,7 +311,8 @@ class Reconstructor:
                     xi.detach().numpy(), return_distance=False
                 )
         nn_dists = torch.sqrt(
-            torch.sum((xi.unsqueeze(1) - points[nn_inds]) ** 2, dim=-1)
+            # torch.sum((xi.unsqueeze(1) - points[nn_inds]) ** 2, dim=-1)
+            torch.sum((xi[:, None, :] - points[torch.from_numpy(nn_inds)]) ** 2, dim=-1)
         )
         nn_weights = self._compute_neighbor_weights(
             nn_dists, power=power, backend="torch"
