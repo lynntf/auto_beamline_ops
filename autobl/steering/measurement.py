@@ -75,6 +75,12 @@ class XANESExperimentalMeasurement(Measurement):
         pass
 
     def measure(self, x, *args, **kwargs):
+        """
+        Take measurement.
+
+        :param x: Tensor. A list of points where the values are measured. Tensor shape should be [n_pts, n_dims].
+        :return: Tensor. Measured values at `x`. Values are returned in shape [n_pts,].
+        """
         raise NotImplementedError
 
 
