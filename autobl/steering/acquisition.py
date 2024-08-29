@@ -223,6 +223,7 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
             finite_difference_interval: float = 1e-2,
             add_posterior_stddev: bool = True,
             estimate_posterior_mean_by_interpolation: bool = False,
+            subtract_background_gradient: bool = True,
             guide_obj: Any = None,
             debug: bool = False
     ) -> None:
@@ -242,6 +243,8 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
             when `method` is `"numerical"`.  This value is specified in the normalized
             scale (between 0 and 1).
         :param add_posterior_stddev: bool. If True, posterior standard deviation is added to the function value.
+        :param subtract_background_gradient: bool. If True, the gradient of the global background is estimated
+            using the first segment of the posterior mean, and is subtracted from the function value.
         """
         super().__init__(model, input_transform, posterior_transform, maximize, beta, gamma,
                          add_posterior_stddev, estimate_posterior_mean_by_interpolation, guide_obj, debug)
@@ -252,6 +255,8 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
         self.order = order
         self.finite_difference_interval = finite_difference_interval
         self.add_posterior_stddev = add_posterior_stddev
+        self.subtract_background_gradient = subtract_background_gradient
+        self.background_gradient = 0
         if method == 'analytical' and order > 1:
             raise ValueError("When method is 'analytical', order can only be 1.")
         if method not in ['analytical', 'numerical']:
@@ -294,10 +299,13 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
         elif self.method == 'numerical':
             for ord in range(1, self.order + 1):
                 g = self.calculate_gradients_numerical(x, order=ord)
+                if ord == 1 and self.subtract_background_gradient:
+                    g = g - self.background_gradient
                 g = torch.linalg.norm(g, dim=-1)
                 gradients_all_orders[ord - 1] = g
         else:
             raise ValueError
+        
         if not self.add_posterior_stddev:
             sigma = 0
         a = sigma + self.phi * gradients_all_orders[0]
@@ -331,7 +339,7 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
                 d = (differentiate(x + h, h, f, order=order - 1) - differentiate(x - h, h, f, order=order - 1))
                 d = d / (2 * h)
                 return d
-        f = lambda x: self.model.posterior(x).mean
+        f = lambda x: self._mean_and_sigma(x)[0].reshape([-1, 1, 1])
         g = []
         gradient_dims = self.gradient_dims
         if gradient_dims is None:
@@ -343,6 +351,9 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
             g.append(gi)
         g = torch.cat(g, dim=-1)
         return g.squeeze(1)
+    
+    def set_background_gradient(self, background_gradient):
+        self.background_gradient = background_gradient
 
 
 class ComprehensiveAugmentedAcquisitionFunction(PosteriorStandardDeviationDerivedAcquisition):
@@ -367,6 +378,7 @@ class ComprehensiveAugmentedAcquisitionFunction(PosteriorStandardDeviationDerive
             add_posterior_stddev: bool = True,
             estimate_posterior_mean_by_interpolation: bool = False,
             guide_obj: Any = None,
+            subtract_background_gradient: bool = True,
             debug: bool = False
     ) -> None:
         """
@@ -397,6 +409,7 @@ class ComprehensiveAugmentedAcquisitionFunction(PosteriorStandardDeviationDerive
             phi2=phi_g2,
             add_posterior_stddev=False,
             estimate_posterior_mean_by_interpolation=estimate_posterior_mean_by_interpolation,
+            subtract_background_gradient=subtract_background_gradient,
             guide_obj=guide_obj,
         )
         if reference_spectra_x is not None and reference_spectra_y is not None:
@@ -428,6 +441,9 @@ class ComprehensiveAugmentedAcquisitionFunction(PosteriorStandardDeviationDerive
         self.add_posterior_stddev = add_posterior_stddev
         self.addon_term_lower_bound = addon_term_lower_bound
         self.debug = debug
+        
+    def set_background_gradient(self, background_gradient):
+        self.acqf_g.set_background_gradient(background_gradient)
 
     def update_hyperparams_following_schedule(self):
         self.acqf_r.update_hyperparams_following_schedule()

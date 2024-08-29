@@ -66,6 +66,14 @@ class StoppingCriterionConfig(Config):
 
     n_check_interval: int = 5
     """Check stopping criterion after every this number of model updates."""
+    
+    n_max_measurements: Optional[int] = None
+    """
+    Maximum number of measurements to be performed. This is used in conjunction with the primary
+    checker specified by `method`: a stopping signal is triggered when `n_max_measurements` is reached
+    or when the primary checker returns True, whichever comes first. If None, the number of
+    measurements is unlimited.
+    """
 
 
 @dataclasses.dataclass

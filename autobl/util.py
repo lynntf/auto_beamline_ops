@@ -9,13 +9,16 @@ except:
 
 
 def to_tensor(x):
-    if isinstance(x, np.ndarray):
+    if isinstance(x, (np.ndarray, list, tuple)):
         # If CUDA is available, convert array to tensor using torch.tensor, which honors the set default device.
         # Otherwise, use from_numpy which creates a reference to the data in memory instead of creating a copy.
         if torch.cuda.is_available():
             return torch.tensor(x)
         else:
-            return torch.from_numpy(x)
+            try:
+                return torch.from_numpy(x)
+            except TypeError:
+                return torch.tensor(x)
     else:
         return x
 

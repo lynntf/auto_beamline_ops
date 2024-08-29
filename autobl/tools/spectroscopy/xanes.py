@@ -1,5 +1,6 @@
 from argparse import ArgumentParser
 from typing import Optional, Tuple, Sequence
+import os
 
 import numpy as np
 import scipy
@@ -69,6 +70,8 @@ class XANESNormalizer:
         return mu0
     
     def save_state(self, path):
+        if not os.path.exists(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path))
         np.save(path, self.__dict__)
         
     def load_state(self, path):
